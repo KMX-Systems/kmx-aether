@@ -4,5 +4,6 @@ Project {
     references: [
         "library/lib.qbs",
         "library-test/unit-test.qbs",
+        "sample/sample.qbs",
     ]
 }
