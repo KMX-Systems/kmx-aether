@@ -5,7 +5,7 @@ CppApplication {
 
     name: "quadcopter-sample"
     consoleApplication: true
-    cpp.cxxLanguageVersion: "c++26"
+    cpp.cxxLanguageVersion: "c++20"
     cpp.debugInformation: true
     cpp.enableRtti: false
     cpp.includePaths: [

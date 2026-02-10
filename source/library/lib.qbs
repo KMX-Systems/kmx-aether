@@ -3,7 +3,7 @@ import qbs
 StaticLibrary {
     Depends { name: "cpp" }
     consoleApplication: true
-    cpp.cxxLanguageVersion: "c++26"
+    cpp.cxxLanguageVersion: "c++20"
     cpp.enableRtti: false
     cpp.includePaths: [
         "inc",
