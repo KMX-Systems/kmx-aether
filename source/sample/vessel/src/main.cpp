@@ -6,14 +6,15 @@ namespace kmx::aether::v0_1::sample::vessel
     namespace sense = kmx::aether::v0_1::sense;
     namespace motion = kmx::aether::v0_1::motion;
     namespace payload = kmx::aether::v0_1::payload;
+    namespace telematics = kmx::aether::v0_1::telematics;
 
     struct hardware
     {
-        sense::perception::radar marine_radar;
-        sense::spatial::gnss_receiver gps;
-        motion::articulation::servo_array rudders;
-        motion::propulsion::engine_control diesel_jets;
-        telematics::link::satcom_modem satellite;
+        sense::perception::local::radar marine_radar;
+        sense::spatial::local::gnss_receiver gps;
+        motion::articulation::local::servo_array rudders;
+        motion::propulsion::local::engine_control diesel_jets;
+        telematics::link::local::satcom_modem satellite;
     };
 }
 

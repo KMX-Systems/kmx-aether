@@ -8,9 +8,9 @@ namespace kmx::aether::v0_1::sample::airplane
 
     struct hardware
     {
-        sense::environment::air_data pitot_tube;    // Airspeed
-        sense::spatial::gnss_receiver gps;          // Position
-        motion::articulation::servo_array surfaces; // Aileron, Elevator, Rudder, Throttle
+        sense::environment::local::air_data pitot_tube;    // Airspeed
+        sense::spatial::local::gnss_receiver gps;          // Position
+        motion::articulation::local::servo_array surfaces; // Aileron, Elevator, Rudder, Throttle
     };
 }
 

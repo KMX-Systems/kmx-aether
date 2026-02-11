@@ -13,11 +13,11 @@ namespace kmx::aether::v0_1::sample::rover
     namespace sys = kmx::aether::v0_1::foundation::sys;
 
     template<
-        sense::perception::Lidar lidar_t,
-        motion::propulsion::EngineControl engine_t,
-        motion::articulation::ServoArray servo_t,
-        payload::logistics::GripperMech gripper_t,
-        motion::articulation::Lighting lighting_t
+        sense::perception::lidar lidar_t,
+        motion::propulsion::engine_control engine_t,
+        motion::articulation::servo_array servo_t,
+        payload::logistics::gripper_mech gripper_t,
+        motion::articulation::lighting lighting_t
     >
     struct hardware_t
     {
@@ -33,11 +33,11 @@ namespace kmx::aether::v0_1::sample::rover
     };
 
     template<
-        gnc::navigation::EkfFusion ekf_t,
-        gnc::navigation::SlamEngine slam_t,
-        gnc::guidance::GlobalPlanner global_planner_t,
-        gnc::guidance::LocalPlanner local_planner_t,
-        gnc::control::PositionCtrl position_ctrl_t
+        gnc::navigation::ekf_fusion ekf_t,
+        gnc::navigation::slam_engine slam_t,
+        gnc::guidance::global_planner global_planner_t,
+        gnc::guidance::local_planner local_planner_t,
+        gnc::control::position_ctrl position_ctrl_t
     >
     struct autonomy_t
     {
@@ -49,9 +49,9 @@ namespace kmx::aether::v0_1::sample::rover
     };
 
     template<
-        assurance::fdir::FaultDetector fault_detector_t,
-        assurance::state_machine::ModeManager mode_manager_t,
-        sys::Watchdog watchdog_t
+        assurance::fdir::fault_detector fault_detector_t,
+        assurance::state_machine::mode_manager mode_manager_t,
+        sys::watchdog watchdog_t
     >
     struct safety_t
     {
@@ -61,7 +61,7 @@ namespace kmx::aether::v0_1::sample::rover
     };
 
     template<
-        telematics::link::MavlinkBridge mavlink_t
+        telematics::link::mavlink_bridge mavlink_t
     >
     struct comms_t
     {
@@ -80,6 +80,8 @@ namespace kmx::aether::v0_1::sample::rover
         autonomy_type ai;
         safety_type protection;
         comms_type radio;
+
+        void f() {}
     };
 
     template <bool use_remote>
@@ -130,6 +132,8 @@ int main() noexcept
     try
     {
         rover_vehicle rover;
+        rover.f();
+        std::cout << "done\n";
     }
     catch (const std::exception& ex)
     {

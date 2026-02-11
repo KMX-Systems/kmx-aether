@@ -6,6 +6,7 @@
 /// @version 0.3
 /// @copyright KMX Systems
 
+#include <cstdint>
 #include <concepts>
 #include <coroutine>
 
@@ -13,11 +14,58 @@
 /// @brief The root namespace for the unified architecture.
 namespace kmx::aether::v0_1
 {
+    /// @brief Minimal concept for a coroutine-compatible Awaitable (Sender model).
+    template<typename T>
+    concept awaitable = requires(T t, std::coroutine_handle<> h) {
+        { t.await_ready() } -> std::convertible_to<bool>;
+        { t.await_suspend(h) };
+        { t.await_resume() };
+    };
+
+    /// @brief Helper to enforce return types of async operations.
+    template<typename T, typename Result>
+    concept sender_of = awaitable<T> && requires(T t) {
+        { t.await_resume() } -> std::convertible_to<Result>;
+    };
+
     /// @brief Base concept for all Aether services enforcing async behavior.
     template<typename T>
-    concept AsyncService = requires(T t) {
-        // In a real implementation, this would enforce `std::execution::sender` return types
+    concept async_service = requires(T t) {
         typename T::service_tag;
+    };
+
+    // --- Common Data Types for APIs ---
+
+    struct empty {}; // Void return for senders
+
+    // Generic trivial awaitable for mocking
+    template<typename T = void>
+    struct task_stub {
+        struct promise_type {
+            T value;
+            task_stub get_return_object() { return {}; }
+            std::suspend_never initial_suspend() { return {}; }
+            std::suspend_never final_suspend() noexcept { return {}; }
+            void return_value(T v) { value = v; }
+            void unhandled_exception() {}
+        };
+        bool await_ready() const { return true; }
+        void await_suspend(std::coroutine_handle<>) {}
+        T await_resume() { return {}; }
+    };
+
+    template<>
+    struct task_stub<void> {
+        struct promise_type {
+            task_stub get_return_object() { return {}; }
+            std::suspend_never initial_suspend() { return {}; }
+            std::suspend_never final_suspend() noexcept { return {}; }
+            void return_void() {}
+            void unhandled_exception() {}
+        };
+        bool await_ready() const { return true; }
+        void await_suspend(std::coroutine_handle<>) {}
+        void await_resume() {}
     };
 
     /// @namespace aether::foundation
@@ -29,16 +77,16 @@ namespace kmx::aether::v0_1
         namespace sys
         {
             /// @brief Coroutine executor and task dispatcher (Contract).
-            template<typename T> concept Scheduler = AsyncService<T>;
+            template<typename T> concept scheduler = async_service<T>;
 
             /// @brief Worker thread management for parallel execution (Contract).
-            template<typename T> concept ThreadPool = AsyncService<T>;
+            template<typename T> concept thread_pool = async_service<T>;
 
             /// @brief Real-time polymorphic memory resources (PMR) (Contract).
-            template<typename T> concept MemoryPool = AsyncService<T>;
+            template<typename T> concept memory_pool = async_service<T>;
 
             /// @brief Hardware independent watchdog timer interface (Contract).
-            template<typename T> concept Watchdog = AsyncService<T>;
+            template<typename T> concept watchdog = async_service<T>;
 
             namespace local
             {
@@ -48,10 +96,7 @@ namespace kmx::aether::v0_1
                 class watchdog { public: using service_tag = void; };
             }
 
-            using scheduler = local::scheduler;
-            using thread_pool = local::thread_pool;
-            using memory_pool = local::memory_pool;
-            using watchdog = local::watchdog;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -69,10 +114,10 @@ namespace kmx::aether::v0_1
             struct parameter {};     ///< @brief A single tunable value with metadata (min/max/default).
 
             /// @brief Central database for hot-reloadable settings (Contract).
-            template<typename T> concept Registry = AsyncService<T>;
+            template<typename T> concept registry = async_service<T>;
 
             /// @brief Manages mission-specific configuration presets (Contract).
-            template<typename T> concept ProfileLoader = AsyncService<T>;
+            template<typename T> concept profile_loader = async_service<T>;
 
             namespace local
             {
@@ -80,8 +125,7 @@ namespace kmx::aether::v0_1
                 class profile_loader { public: using service_tag = void; };
             }
 
-            using registry = local::registry;
-            using profile_loader = local::profile_loader;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -105,10 +149,10 @@ namespace kmx::aether::v0_1
         namespace compute
         {
             /// @brief Abstraction for TensorRT/EdgeTPU inference (Contract).
-            template<typename T> concept NeuralRuntime = AsyncService<T>;
+            template<typename T> concept neural_runtime = async_service<T>;
 
             /// @brief Shared context for CUDA/OpenCL operations (Contract).
-            template<typename T> concept GpuContext = AsyncService<T>;
+            template<typename T> concept gpu_context = async_service<T>;
 
             namespace local
             {
@@ -116,8 +160,7 @@ namespace kmx::aether::v0_1
                 class gpu_context { public: using service_tag = void; };
             }
 
-            using neural_runtime = local::neural_runtime;
-            using gpu_context = local::gpu_context;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -133,14 +176,14 @@ namespace kmx::aether::v0_1
             struct timestamp {};     ///< @brief Nanosecond-precision PTP timestamp.
 
             /// @brief IEEE 802.1AS Master/Slave synchronization logic (Contract).
-            template<typename T> concept ClockSync = AsyncService<T>;
+            template<typename T> concept clock_sync = async_service<T>;
 
             namespace local
             {
                 class clock_sync { public: using service_tag = void; };
             }
 
-            using clock_sync = local::clock_sync;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -158,13 +201,13 @@ namespace kmx::aether::v0_1
         namespace tsn
         {
             /// @brief AF_XDP raw socket wrapper (Contract).
-            template<typename T> concept Interface = AsyncService<T>;
+            template<typename T> concept interface = async_service<T>;
 
             /// @brief Zero-copy Publisher/Subscriber pattern implementation (Contract).
-            template<typename T> concept PubSub = AsyncService<T>;
+            template<typename T> concept pub_sub = async_service<T>;
 
             /// @brief Bandwidth shaping and traffic prioritization (Contract).
-            template<typename T> concept QosPolicy = AsyncService<T>;
+            template<typename T> concept qos_policy = async_service<T>;
 
             namespace local
             {
@@ -173,9 +216,7 @@ namespace kmx::aether::v0_1
                 class qos_policy { public: using service_tag = void; };
             }
 
-            using interface = local::interface;
-            using pub_sub = local::pub_sub;
-            using qos_policy = local::qos_policy;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -190,13 +231,13 @@ namespace kmx::aether::v0_1
         namespace security
         {
             /// @brief Hardware Secure Element (HSE) abstraction (Contract).
-            template<typename T> concept CryptoEngine = AsyncService<T>;
+            template<typename T> concept crypto_engine = async_service<T>;
 
             /// @brief Command signature verification (Contract).
-            template<typename T> concept Authenticator = AsyncService<T>;
+            template<typename T> concept authenticator = async_service<T>;
 
             /// @brief Secure storage for AES/RSA keys (Contract).
-            template<typename T> concept KeyStore = AsyncService<T>;
+            template<typename T> concept key_store = async_service<T>;
 
             namespace local
             {
@@ -205,9 +246,7 @@ namespace kmx::aether::v0_1
                 class key_store { public: using service_tag = void; };
             }
 
-            using crypto_engine = local::crypto_engine;
-            using authenticator = local::authenticator;
-            using key_store = local::key_store;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -222,10 +261,10 @@ namespace kmx::aether::v0_1
         namespace io
         {
             /// @brief High-frequency binary flight data recorder (Contract).
-            template<typename T> concept Blackbox = AsyncService<T>;
+            template<typename T> concept blackbox = async_service<T>;
 
             /// @brief Text-based system event logging (Contract).
-            template<typename T> concept Journal = AsyncService<T>;
+            template<typename T> concept journal = async_service<T>;
 
             namespace local
             {
@@ -233,8 +272,7 @@ namespace kmx::aether::v0_1
                 class journal { public: using service_tag = void; };
             }
 
-            using blackbox = local::blackbox;
-            using journal = local::journal;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -253,13 +291,13 @@ namespace kmx::aether::v0_1
         namespace spatial
         {
             /// @brief Redundant IMU management and voting logic (Contract).
-            template<typename T> concept ImuArray = AsyncService<T>;
+            template<typename T> concept imu_array = async_service<T>;
 
             /// @brief Multi-constellation GNSS interface (Contract).
-            template<typename T> concept GnssReceiver = AsyncService<T>;
+            template<typename T> concept gnss_receiver = async_service<T>;
 
             /// @brief Barometric or Laser altimetry (Contract).
-            template<typename T> concept Altimeter = AsyncService<T>;
+            template<typename T> concept altimeter = async_service<T>;
 
             namespace local
             {
@@ -268,9 +306,7 @@ namespace kmx::aether::v0_1
                 class altimeter { public: using service_tag = void; };
             }
 
-            using imu_array = local::imu_array;
-            using gnss_receiver = local::gnss_receiver;
-            using altimeter = local::altimeter;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -285,13 +321,13 @@ namespace kmx::aether::v0_1
         namespace environment
         {
             /// @brief Pitot/Static systems for airspeed and AoA (Contract).
-            template<typename T> concept AirData = AsyncService<T>;
+            template<typename T> concept air_data = async_service<T>;
 
             /// @brief DVL, Sonar, and Depth sensors (Contract).
-            template<typename T> concept OceanData = AsyncService<T>;
+            template<typename T> concept ocean_data = async_service<T>;
 
             /// @brief Short-range obstacle detection (Ultrasonic/ToF) (Contract).
-            template<typename T> concept Proximity = AsyncService<T>;
+            template<typename T> concept proximity = async_service<T>;
 
             namespace local
             {
@@ -300,9 +336,7 @@ namespace kmx::aether::v0_1
                 class proximity { public: using service_tag = void; };
             }
 
-            using air_data = local::air_data;
-            using ocean_data = local::ocean_data;
-            using proximity = local::proximity;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -316,40 +350,53 @@ namespace kmx::aether::v0_1
         /// @brief High-bandwidth vision and ranging sensors.
         namespace perception
         {
+            struct PointCloud {};
+            struct LidarConfig { int rpm; };
+
             /// @brief Interface for optical and thermal cameras (Contract).
-            template<typename T> concept Camera = AsyncService<T>;
+            template<typename T> concept camera = async_service<T>;
 
             /// @brief Interface for 2D/3D Lidar scanners (Contract).
-            template<typename T> concept Lidar = AsyncService<T>;
+            template<typename T> concept lidar = async_service<T> && requires(T t, LidarConfig c) {
+                { t.configure(c) } -> sender_of<void>;
+                { t.get_latest_scan() } -> sender_of<PointCloud>;
+            };
 
             /// @brief Interface for automotive/marine radar units (Contract).
-            template<typename T> concept Radar = AsyncService<T>;
+            template<typename T> concept radar = async_service<T>;
 
             /// @brief Edge-AI processing for feature points (Contract).
-            template<typename T> concept FeatureExtractor = AsyncService<T>;
+            template<typename T> concept feature_extractor = async_service<T>;
 
             /// @brief Stereo-vision depth map generation (Contract).
-            template<typename T> concept DepthEstimator = AsyncService<T>;
+            template<typename T> concept depth_estimator = async_service<T>;
 
             namespace local
             {
                 class camera { public: using service_tag = void; };
-                class lidar { public: using service_tag = void; };
+                class lidar {
+                public:
+                    using service_tag = void;
+                    auto configure(LidarConfig) { return task_stub<void>{}; }
+                    auto get_latest_scan() { return task_stub<PointCloud>{}; }
+                };
                 class radar { public: using service_tag = void; };
                 class feature_extractor { public: using service_tag = void; };
                 class depth_estimator { public: using service_tag = void; };
             }
 
-            using camera = local::camera;
-            using lidar = local::lidar;
-            using radar = local::radar;
-            using feature_extractor = local::feature_extractor;
-            using depth_estimator = local::depth_estimator;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
                 class camera { public: using service_tag = void; };
-                class lidar { public: using service_tag = void; };
+                class lidar {
+                public:
+                    using service_tag = void;
+                    // Remote implementation would serialize args here
+                    auto configure(LidarConfig) { return task_stub<void>{}; }
+                    auto get_latest_scan() { return task_stub<PointCloud>{}; }
+                };
                 class radar { public: using service_tag = void; };
                 class feature_extractor { public: using service_tag = void; };
                 class depth_estimator { public: using service_tag = void; };
@@ -361,10 +408,10 @@ namespace kmx::aether::v0_1
         namespace diagnostics
         {
             /// @brief FFT analysis for motor/frame integrity (Contract).
-            template<typename T> concept VibrationSensor = AsyncService<T>;
+            template<typename T> concept vibration_sensor = async_service<T>;
 
             /// @brief Thermal and load monitoring for compute modules (Contract).
-            template<typename T> concept ChipMonitor = AsyncService<T>;
+            template<typename T> concept chip_monitor = async_service<T>;
 
             namespace local
             {
@@ -372,8 +419,7 @@ namespace kmx::aether::v0_1
                 class chip_monitor { public: using service_tag = void; };
             }
 
-            using vibration_sensor = local::vibration_sensor;
-            using chip_monitor = local::chip_monitor;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -391,35 +437,53 @@ namespace kmx::aether::v0_1
         /// @brief Force generation mechanisms.
         namespace propulsion
         {
+            struct EngineState { float rpm; float temp_c; float voltage; };
+
             /// @brief Electronic Speed Controller interface (Contract).
-            template<typename T> concept EscDriver = AsyncService<T>;
+            template<typename T> concept esc_driver = async_service<T>;
 
             /// @brief ICE Throttle, Ignition, and Starter control (Contract).
-            template<typename T> concept EngineControl = AsyncService<T>;
+            template<typename T> concept engine_control = async_service<T> && requires(T t, float nm) {
+                { t.arm() } -> sender_of<void>;
+                { t.disarm() } -> sender_of<void>;
+                { t.set_torque(nm) } -> sender_of<void>;
+                { t.get_telemetry() } -> sender_of<EngineState>;
+            };
 
             /// @brief Gimbal or Vectored Thrust control (Contract).
-            template<typename T> concept ThrustVector = AsyncService<T>;
+            template<typename T> concept thrust_vector = async_service<T>;
 
             /// @brief Helicopter swashplate or variable prop control (Contract).
-            template<typename T> concept VariablePitch = AsyncService<T>;
+            template<typename T> concept variable_pitch = async_service<T>;
 
             namespace local
             {
                 class esc_driver { public: using service_tag = void; };
-                class engine_control { public: using service_tag = void; };
+                class engine_control {
+                public:
+                    using service_tag = void;
+                    auto arm() { return task_stub<void>{}; }
+                    auto disarm() { return task_stub<void>{}; }
+                    auto set_torque(float) { return task_stub<void>{}; }
+                    auto get_telemetry() { return task_stub<EngineState>{}; }
+                };
                 class thrust_vector { public: using service_tag = void; };
                 class variable_pitch { public: using service_tag = void; };
             }
 
-            using esc_driver = local::esc_driver;
-            using engine_control = local::engine_control;
-            using thrust_vector = local::thrust_vector;
-            using variable_pitch = local::variable_pitch;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
                 class esc_driver { public: using service_tag = void; };
-                class engine_control { public: using service_tag = void; };
+                class engine_control {
+                public:
+                    using service_tag = void;
+                    auto arm() { return task_stub<void>{}; }
+                    auto disarm() { return task_stub<void>{}; }
+                    auto set_torque(float) { return task_stub<void>{}; }
+                    auto get_telemetry() { return task_stub<EngineState>{}; }
+                };
                 class thrust_vector { public: using service_tag = void; };
                 class variable_pitch { public: using service_tag = void; };
             }
@@ -429,31 +493,58 @@ namespace kmx::aether::v0_1
         /// @brief Shape changing and control surface mechanisms.
         namespace articulation
         {
+            enum class LightMode { OFF, SOLID, BLINK_SLOW, BLINK_FAST, STROBE };
+            struct Color { std::uint8_t r, g, b; };
+
             /// @brief Manager for PWM/CAN/UAVCAN servos (Contract).
-            template<typename T> concept ServoArray = AsyncService<T>;
+            template<typename T> concept servo_array = async_service<T> && requires(T t, int ch, float angle) {
+                { t.set_angle(ch, angle) } -> sender_of<void>;
+                { t.set_limits(ch, angle, angle) } -> sender_of<void>;
+            };
 
             /// @brief Retractable gear logic (Contract).
-            template<typename T> concept LandingGear = AsyncService<T>;
+            template<typename T> concept landing_gear = async_service<T>;
 
             /// @brief Navigation lights and strobes (Contract).
-            template<typename T> concept Lighting = AsyncService<T>;
+            template<typename T> concept lighting = async_service<T> && requires(T t, LightMode m, Color c) {
+                { t.set_mode(m) } -> sender_of<void>;
+                { t.set_color(c) } -> sender_of<void>;
+            };
 
             namespace local
             {
-                class servo_array { public: using service_tag = void; };
+                class servo_array {
+                public:
+                    using service_tag = void;
+                    auto set_angle(int, float) { return task_stub<void>{}; }
+                    auto set_limits(int, float, float) { return task_stub<void>{}; }
+                };
                 class landing_gear { public: using service_tag = void; };
-                class lighting { public: using service_tag = void; };
+                class lighting {
+                public:
+                    using service_tag = void;
+                    auto set_mode(LightMode) { return task_stub<void>{}; }
+                    auto set_color(Color) { return task_stub<void>{}; }
+                };
             }
 
-            using servo_array = local::servo_array;
-            using landing_gear = local::landing_gear;
-            using lighting = local::lighting;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
-                class servo_array { public: using service_tag = void; };
+                class servo_array {
+                public:
+                    using service_tag = void;
+                    auto set_angle(int, float) { return task_stub<void>{}; }
+                    auto set_limits(int, float, float) { return task_stub<void>{}; }
+                };
                 class landing_gear { public: using service_tag = void; };
-                class lighting { public: using service_tag = void; };
+                class lighting {
+                public:
+                    using service_tag = void;
+                    auto set_mode(LightMode) { return task_stub<void>{}; }
+                    auto set_color(Color) { return task_stub<void>{}; }
+                };
             }
         }
 
@@ -462,10 +553,10 @@ namespace kmx::aether::v0_1
         namespace power
         {
             /// @brief Battery Management System interface (Contract).
-            template<typename T> concept BmsManager = AsyncService<T>;
+            template<typename T> concept bms_manager = async_service<T>;
 
             /// @brief Smart switching for power rails (Contract).
-            template<typename T> concept PduChannel = AsyncService<T>;
+            template<typename T> concept pdu_channel = async_service<T>;
 
             namespace local
             {
@@ -473,8 +564,7 @@ namespace kmx::aether::v0_1
                 class pdu_channel { public: using service_tag = void; };
             }
 
-            using bms_manager = local::bms_manager;
-            using pdu_channel = local::pdu_channel;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -493,13 +583,13 @@ namespace kmx::aether::v0_1
         namespace navigation
         {
             /// @brief Extended Kalman Filter for state estimation (Contract).
-            template<typename T> concept EkfFusion = AsyncService<T>;
+            template<typename T> concept ekf_fusion = async_service<T>;
 
             /// @brief Simultaneous Localization and Mapping logic (Contract).
-            template<typename T> concept SlamEngine = AsyncService<T>;
+            template<typename T> concept slam_engine = async_service<T>;
 
             /// @brief Management of ECEF reference and Home point (Contract).
-            template<typename T> concept OriginManager = AsyncService<T>;
+            template<typename T> concept origin_manager = async_service<T>;
 
             namespace local
             {
@@ -508,9 +598,7 @@ namespace kmx::aether::v0_1
                 class origin_manager { public: using service_tag = void; };
             }
 
-            using ekf_fusion = local::ekf_fusion;
-            using slam_engine = local::slam_engine;
-            using origin_manager = local::origin_manager;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -525,16 +613,16 @@ namespace kmx::aether::v0_1
         namespace guidance
         {
             /// @brief Kinematic trajectory generation (Jerk-limited) (Contract).
-            template<typename T> concept TrajectoryGen = AsyncService<T>;
+            template<typename T> concept trajectory_gen = async_service<T>;
 
             /// @brief Map-based pathfinding (A*, Dijkstra) (Contract).
-            template<typename T> concept GlobalPlanner = AsyncService<T>;
+            template<typename T> concept global_planner = async_service<T>;
 
             /// @brief Reactive obstacle avoidance (VFH+, DWA) (Contract).
-            template<typename T> concept LocalPlanner = AsyncService<T>;
+            template<typename T> concept local_planner = async_service<T>;
 
             /// @brief Formation keeping and inter-agent spacing (Contract).
-            template<typename T> concept SwarmLogic = AsyncService<T>;
+            template<typename T> concept swarm_logic = async_service<T>;
 
             namespace local
             {
@@ -544,10 +632,7 @@ namespace kmx::aether::v0_1
                 class swarm_logic { public: using service_tag = void; };
             }
 
-            using trajectory_gen = local::trajectory_gen;
-            using global_planner = local::global_planner;
-            using local_planner = local::local_planner;
-            using swarm_logic = local::swarm_logic;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -563,13 +648,13 @@ namespace kmx::aether::v0_1
         namespace control
         {
             /// @brief Inner-loop rate and angle controllers (Contract).
-            template<typename T> concept AttitudeCtrl = AsyncService<T>;
+            template<typename T> concept attitude_ctrl = async_service<T>;
 
             /// @brief Outer-loop velocity and position controllers (Contract).
-            template<typename T> concept PositionCtrl = AsyncService<T>;
+            template<typename T> concept position_ctrl = async_service<T>;
 
             /// @brief Control Allocation Matrix (The "Mixer") (Contract).
-            template<typename T> concept Allocator = AsyncService<T>;
+            template<typename T> concept allocator = async_service<T>;
 
             namespace local
             {
@@ -578,9 +663,7 @@ namespace kmx::aether::v0_1
                 class allocator { public: using service_tag = void; };
             }
 
-            using attitude_ctrl = local::attitude_ctrl;
-            using position_ctrl = local::position_ctrl;
-            using allocator = local::allocator;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -600,13 +683,13 @@ namespace kmx::aether::v0_1
         namespace fdir
         {
             /// @brief Statistical variance and timeout monitoring (Contract).
-            template<typename T> concept FaultDetector = AsyncService<T>;
+            template<typename T> concept fault_detector = async_service<T>;
 
             /// @brief Redundancy switching logic (e.g., GPS -> Optical Flow) (Contract).
-            template<typename T> concept FailoverLogic = AsyncService<T>;
+            template<typename T> concept failover_logic = async_service<T>;
 
             /// @brief Terminal safety procedures (Chute, Flight Termination) (Contract).
-            template<typename T> concept EmergencyProc = AsyncService<T>;
+            template<typename T> concept emergency_proc = async_service<T>;
 
             namespace local
             {
@@ -614,10 +697,6 @@ namespace kmx::aether::v0_1
                 class failover_logic { public: using service_tag = void; };
                 class emergency_proc { public: using service_tag = void; };
             }
-
-            using fault_detector = local::fault_detector;
-            using failover_logic = local::failover_logic;
-            using emergency_proc = local::emergency_proc;
 
             namespace remote
             {
@@ -632,10 +711,10 @@ namespace kmx::aether::v0_1
         namespace state_machine
         {
             /// @brief Transitions between Manual, Auto, Stabilize, etc. (Contract).
-            template<typename T> concept ModeManager = AsyncService<T>;
+            template<typename T> concept mode_manager = async_service<T>;
 
             /// @brief Arming constraints and safety interlocks (Contract).
-            template<typename T> concept PreflightCheck = AsyncService<T>;
+            template<typename T> concept preflight_check = async_service<T>;
 
             namespace local
             {
@@ -643,8 +722,7 @@ namespace kmx::aether::v0_1
                 class preflight_check { public: using service_tag = void; };
             }
 
-            using mode_manager = local::mode_manager;
-            using preflight_check = local::preflight_check;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -663,28 +741,40 @@ namespace kmx::aether::v0_1
         namespace logistics
         {
             /// @brief Claws, magnets, and retention systems (Contract).
-            template<typename T> concept GripperMech = AsyncService<T>;
+            template<typename T> concept gripper_mech = async_service<T> && requires(T t) {
+                { t.grab() } -> sender_of<bool>;
+                { t.release() } -> sender_of<void>;
+                { t.get_force() } -> sender_of<float>;
+            };
 
             /// @brief Cable delivery logic (Contract).
-            template<typename T> concept WinchControl = AsyncService<T>;
+            template<typename T> concept winch_control = async_service<T>;
 
             /// @brief Fluid flow control for agriculture/firefighting (Contract).
-            template<typename T> concept PumpSystem = AsyncService<T>;
+            template<typename T> concept pump_system = async_service<T>;
 
             namespace local
             {
-                class gripper_mech { public: using service_tag = void; };
+                class gripper_mech {
+                public:
+                     using service_tag = void;
+                     auto grab() { return task_stub<bool>{}; }
+                     auto release() { return task_stub<void>{}; }
+                     auto get_force() { return task_stub<float>{}; }
+                };
                 class winch_control { public: using service_tag = void; };
                 class pump_system { public: using service_tag = void; };
             }
 
-            using gripper_mech = local::gripper_mech;
-            using winch_control = local::winch_control;
-            using pump_system = local::pump_system;
-
             namespace remote
             {
-                class gripper_mech { public: using service_tag = void; };
+                class gripper_mech {
+                public:
+                     using service_tag = void;
+                     auto grab() { return task_stub<bool>{}; }
+                     auto release() { return task_stub<void>{}; }
+                     auto get_force() { return task_stub<float>{}; }
+                };
                 class winch_control { public: using service_tag = void; };
                 class pump_system { public: using service_tag = void; };
             }
@@ -695,16 +785,16 @@ namespace kmx::aether::v0_1
         namespace tactical
         {
             /// @brief Critical safety interlock for dangerous payloads (Contract).
-            template<typename T> concept MasterArm = AsyncService<T>;
+            template<typename T> concept master_arm = async_service<T>;
 
             /// @brief Generic interface for deployable munitions (Contract).
-            template<typename T> concept WeaponSystem = AsyncService<T>;
+            template<typename T> concept weapon_system = async_service<T>;
 
             /// @brief Gimballed sensor suite for designation (Contract).
-            template<typename T> concept TargetingPod = AsyncService<T>;
+            template<typename T> concept targeting_pod = async_service<T>;
 
             /// @brief Electronic Warfare (Jamming/Sensing) (Contract).
-            template<typename T> concept EwSuite = AsyncService<T>;
+            template<typename T> concept ew_suite = async_service<T>;
 
             namespace local
             {
@@ -714,10 +804,7 @@ namespace kmx::aether::v0_1
                 class ew_suite { public: using service_tag = void; };
             }
 
-            using master_arm = local::master_arm;
-            using weapon_system = local::weapon_system;
-            using targeting_pod = local::targeting_pod;
-            using ew_suite = local::ew_suite;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -736,13 +823,13 @@ namespace kmx::aether::v0_1
         namespace link
         {
             /// @brief Mavlink Bridge for GCS communication (Contract).
-            template<typename T> concept MavlinkBridge = AsyncService<T>;
+            template<typename T> concept mavlink_bridge = async_service<T>;
 
             /// @brief Satellite communication modem (Contract).
-            template<typename T> concept SatcomModem = AsyncService<T>;
+            template<typename T> concept satcom_modem = async_service<T>;
 
             /// @brief RCEM Receiver for pilot input (Contract).
-            template<typename T> concept RcemReceiver = AsyncService<T>;
+            template<typename T> concept rcem_receiver = async_service<T>;
 
             namespace local
             {
@@ -751,9 +838,7 @@ namespace kmx::aether::v0_1
                 class rcem_receiver { public: using service_tag = void; };
             }
 
-            using mavlink_bridge = local::mavlink_bridge;
-            using satcom_modem = local::satcom_modem;
-            using rcem_receiver = local::rcem_receiver;
+            // removed type aliases that conflicted with concept names
 
             namespace remote
             {

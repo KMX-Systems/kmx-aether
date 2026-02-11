@@ -9,10 +9,10 @@ namespace kmx::aether::v0_1::sample::quadcopter
 
     struct hardware
     {
-        sense::spatial::imu_array imu;             // Gyro/Accel
-        motion::propulsion::esc_driver motors;     // 4x ESCs
-        motion::power::bms_manager battery;        // Smart Battery
-        telematics::link::rcem_receiver rc_remote; // Pilot Input
+        sense::spatial::local::imu_array imu;             // Gyro/Accel
+        motion::propulsion::local::esc_driver motors;     // 4x ESCs
+        motion::power::local::bms_manager battery;        // Smart Battery
+        telematics::link::local::rcem_receiver rc_remote; // Pilot Input
     };
 }
 
