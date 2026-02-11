@@ -1,6 +1,7 @@
 #include <iostream>
 #include <type_traits>
 #include <kmx/aether/aether.hpp>
+#include <kmx/aether/scheduler.hpp>
 
 namespace kmx::aether::v0_1::sample::rover
 {
@@ -80,8 +81,6 @@ namespace kmx::aether::v0_1::sample::rover
         autonomy_type ai;
         safety_type protection;
         comms_type radio;
-
-        void f() {}
     };
 
     template <bool use_remote>
@@ -118,33 +117,49 @@ namespace kmx::aether::v0_1::sample::rover
 
         using vehicle = vehicle_t<hardware_config, autonomy_config, safety_config, comms_config>;
     };
+
+    template<typename Vehicle>
+    kmx::aether::v0_1::task<void> mission(Vehicle& rover, kmx::aether::v0_1::scheduler& sched)
+    {
+        using namespace kmx::aether::v0_1;
+
+        co_await rover.hw.motors.arm();
+        std::cout << "System Armed" << std::endl;
+
+        for (int i = 0; i < 5; ++i)
+        {
+            std::cout << "Iteration " << i << ": Sensing..." << std::endl;
+            co_await rover.hw.lidar.get_latest_scan();
+
+            std::cout << "Iteration " << i << ": Planning..." << std::endl;
+            co_await sleep_stub(sched);
+
+            std::cout << "Iteration " << i << ": Actuating..." << std::endl;
+            co_await rover.hw.motors.set_torque(5.0f);
+
+            std::cout << "Iteration " << i << ": Resting..." << std::endl;
+            co_await sleep_stub(sched);
+        }
+
+        std::cout << "Mission Complete" << std::endl;
+        co_await rover.hw.motors.disarm();
+    }
 }
 
 int main() noexcept
 {
+    using namespace kmx::aether::v0_1;
     using namespace kmx::aether::v0_1::sample::rover;
 
-    constexpr bool use_remote = false; // Set to true to switch to remote implementations
+    scheduler sched;
 
-    // Instantiate the complete vehicle (false = local, true = remote)
+    constexpr bool use_remote = false;
     using rover_vehicle = configurator<use_remote>::vehicle;
+    rover_vehicle rover;
 
-    try
-    {
-        rover_vehicle rover;
-        rover.f();
-        std::cout << "done\n";
-    }
-    catch (const std::exception& ex)
-    {
-        std::cerr << ex.what() << std::endl;
-        return -1;
-    }
-    catch (...)
-    {
-        std::cerr << "unknown exception" << std::endl;
-        return -2;
-    }
+    auto m = mission(rover, sched);
+    sched.schedule(m.handle);
+    sched.run();
 
     return 0;
 }

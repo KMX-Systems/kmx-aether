@@ -10,6 +10,8 @@
 #include <concepts>
 #include <coroutine>
 
+#include <kmx/aether/scheduler.hpp>
+
 /// @namespace aether
 /// @brief The root namespace for the unified architecture.
 namespace kmx::aether::v0_1
@@ -377,8 +379,8 @@ namespace kmx::aether::v0_1
                 class lidar {
                 public:
                     using service_tag = void;
-                    auto configure(LidarConfig) { return task_stub<void>{}; }
-                    auto get_latest_scan() { return task_stub<PointCloud>{}; }
+                    task<void> configure(LidarConfig) { co_return; }
+                    task<PointCloud> get_latest_scan() { co_return PointCloud{}; }
                 };
                 class radar { public: using service_tag = void; };
                 class feature_extractor { public: using service_tag = void; };
@@ -462,10 +464,10 @@ namespace kmx::aether::v0_1
                 class engine_control {
                 public:
                     using service_tag = void;
-                    auto arm() { return task_stub<void>{}; }
-                    auto disarm() { return task_stub<void>{}; }
-                    auto set_torque(float) { return task_stub<void>{}; }
-                    auto get_telemetry() { return task_stub<EngineState>{}; }
+                    task<void> arm() { co_return; }
+                    task<void> disarm() { co_return; }
+                    task<void> set_torque(float) { co_return; }
+                    task<EngineState> get_telemetry() { co_return EngineState{}; }
                 };
                 class thrust_vector { public: using service_tag = void; };
                 class variable_pitch { public: using service_tag = void; };
@@ -516,15 +518,15 @@ namespace kmx::aether::v0_1
                 class servo_array {
                 public:
                     using service_tag = void;
-                    auto set_angle(int, float) { return task_stub<void>{}; }
-                    auto set_limits(int, float, float) { return task_stub<void>{}; }
+                    task<void> set_angle(int, float) { co_return; }
+                    task<void> set_limits(int, float, float) { co_return; }
                 };
                 class landing_gear { public: using service_tag = void; };
                 class lighting {
                 public:
                     using service_tag = void;
-                    auto set_mode(LightMode) { return task_stub<void>{}; }
-                    auto set_color(Color) { return task_stub<void>{}; }
+                    task<void> set_mode(LightMode) { co_return; }
+                    task<void> set_color(Color) { co_return; }
                 };
             }
 
@@ -758,9 +760,9 @@ namespace kmx::aether::v0_1
                 class gripper_mech {
                 public:
                      using service_tag = void;
-                     auto grab() { return task_stub<bool>{}; }
-                     auto release() { return task_stub<void>{}; }
-                     auto get_force() { return task_stub<float>{}; }
+                     task<bool> grab() { co_return bool{}; }
+                     task<void> release() { co_return; }
+                     task<float> get_force() { co_return float{}; }
                 };
                 class winch_control { public: using service_tag = void; };
                 class pump_system { public: using service_tag = void; };
