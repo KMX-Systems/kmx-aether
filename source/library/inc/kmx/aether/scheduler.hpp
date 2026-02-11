@@ -6,6 +6,10 @@
 #include <chrono>
 #include <thread>
 #include <utility>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
+#include <vector>
 
 
 namespace kmx::aether::v0_1
@@ -130,24 +134,60 @@ namespace kmx::aether::v0_1
         using service_tag = void;
 
     private:
+        std::mutex _q_mutex;
+        std::condition_variable _cv;
         std::queue<std::coroutine_handle<>> _tasks;
+        std::vector<std::thread> _workers;
+        std::atomic<bool> _stop = false;
 
     public:
         void schedule(std::coroutine_handle<> h)
         {
-            _tasks.push(h);
+            {
+                std::lock_guard<std::mutex> lock(_q_mutex);
+                _tasks.push(h);
+            }
+            _cv.notify_one();
         }
 
-        // Loop until queue empty
-        void run()
+        void run(size_t threads = 4)
         {
-             while(!_tasks.empty())
-             {
-                 auto h = _tasks.front();
-                 _tasks.pop();
-                 if (h && !h.done())
-                     h.resume();
-             }
+            for (size_t i = 0; i < threads; ++i)
+            {
+                _workers.emplace_back([this]
+                {
+                    while (true)
+                    {
+                        std::unique_lock<std::mutex> lock(_q_mutex);
+                        _cv.wait(lock, [this] { return _stop || !_tasks.empty(); });
+
+                        if (_stop && _tasks.empty())
+                            return;
+
+                        if (_tasks.empty())
+                            continue;
+
+                        auto h = _tasks.front();
+                        _tasks.pop();
+                        lock.unlock();
+
+                        if (h && !h.done())
+                            h.resume();
+                    }
+                });
+            }
+
+            for (auto& t : _workers)
+            {
+                if (t.joinable())
+                    t.join();
+            }
+        }
+
+        void stop()
+        {
+            _stop = true;
+            _cv.notify_all();
         }
     };
 

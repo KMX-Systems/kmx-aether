@@ -352,7 +352,10 @@ namespace kmx::aether::v0_1
         /// @brief High-bandwidth vision and ranging sensors.
         namespace perception
         {
-            struct PointCloud {};
+            struct PointCloud {
+                int id = 0;
+                float nearest_obstacle_dist = 10.0f;
+            };
             struct LidarConfig { int rpm; };
 
             /// @brief Interface for optical and thermal cameras (Contract).
@@ -380,7 +383,13 @@ namespace kmx::aether::v0_1
                 public:
                     using service_tag = void;
                     task<void> configure(LidarConfig) { co_return; }
-                    task<PointCloud> get_latest_scan() { co_return PointCloud{}; }
+                    task<PointCloud> get_latest_scan() {
+                        static int counter = 0;
+                        PointCloud scan;
+                        scan.id = counter++;
+                        scan.nearest_obstacle_dist = std::max(0.0f, 10.0f - counter * 1.5f);
+                        co_return scan;
+                    }
                 };
                 class radar { public: using service_tag = void; };
                 class feature_extractor { public: using service_tag = void; };
@@ -629,8 +638,30 @@ namespace kmx::aether::v0_1
             namespace local
             {
                 class trajectory_gen { public: using service_tag = void; };
-                class global_planner { public: using service_tag = void; };
-                class local_planner { public: using service_tag = void; };
+                class global_planner {
+                    scheduler* _sched = nullptr;
+                public:
+                    using service_tag = void;
+                    void set_scheduler(scheduler& s) { _sched = &s; }
+
+                    task<float> make_plan() {
+                         if (_sched) co_await sleep_stub(*_sched);
+                         co_return 10.0f;
+                    }
+                };
+                class local_planner {
+                    scheduler* _sched = nullptr;
+                public:
+                    using service_tag = void;
+                    void set_scheduler(scheduler& s) { _sched = &s; }
+
+                    task<float> compute_safe_cmd(float target_speed, sense::perception::PointCloud scan) {
+                         if (_sched) co_await sleep_stub(*_sched);
+
+                         if (scan.nearest_obstacle_dist < 2.0f) co_return 0.0f;
+                         co_return target_speed;
+                    }
+                };
                 class swarm_logic { public: using service_tag = void; };
             }
 

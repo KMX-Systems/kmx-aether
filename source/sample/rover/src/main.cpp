@@ -1,10 +1,31 @@
 #include <iostream>
 #include <type_traits>
+#include <mutex>
+#include <csignal>
+#include <atomic>
 #include <kmx/aether/aether.hpp>
 #include <kmx/aether/scheduler.hpp>
 
 namespace kmx::aether::v0_1::sample::rover
 {
+    std::atomic<bool> g_keep_running{true};
+
+    void handle_signal(int signal)
+    {
+        if (signal == SIGINT)
+        {
+            g_keep_running = false;
+        }
+    }
+
+    std::mutex g_io_mutex;
+
+    void safe_print(const auto&... args)
+    {
+        std::lock_guard lock(g_io_mutex);
+        ((std::cout << args), ...) << std::endl;
+    }
+
     namespace sense = kmx::aether::v0_1::sense;
     namespace motion = kmx::aether::v0_1::motion;
     namespace payload = kmx::aether::v0_1::payload;
@@ -124,25 +145,33 @@ namespace kmx::aether::v0_1::sample::rover
         using namespace kmx::aether::v0_1;
 
         co_await rover.hw.motors.arm();
-        std::cout << "System Armed" << std::endl;
+        safe_print("System Armed");
 
-        for (int i = 0; i < 5; ++i)
+        for (int i = 0; g_keep_running; ++i)
         {
-            std::cout << "Iteration " << i << ": Sensing..." << std::endl;
-            co_await rover.hw.lidar.get_latest_scan();
+            safe_print("[Mission] Iteration ", i, ": Sensing...");
+            auto scan = co_await rover.hw.lidar.get_latest_scan();
+            safe_print("  > LiDAR: Scan ID #", scan.id, " | Dist: ", scan.nearest_obstacle_dist, "m");
 
-            std::cout << "Iteration " << i << ": Planning..." << std::endl;
-            co_await sleep_stub(sched);
+            // 1. Global
+            safe_print("  > Global Planner: Generating route...");
+            const auto desired_speed = co_await rover.ai.path_finder.make_plan();
 
-            std::cout << "Iteration " << i << ": Actuating..." << std::endl;
-            co_await rover.hw.motors.set_torque(5.0f);
+            // 2. Local
+            safe_print("  > Local Planner: Checking obstacles...");
+            const auto safe_torque = co_await rover.ai.obstacle_avoid.compute_safe_cmd(desired_speed, scan);
+            safe_print("  > Local Planner: Safe Command: ", safe_torque, " Nm");
 
-            std::cout << "Iteration " << i << ": Resting..." << std::endl;
+            // 3. Actuate
+            co_await rover.hw.motors.set_torque(safe_torque);
+
+            safe_print("[Mission] Resting...");
             co_await sleep_stub(sched);
         }
 
-        std::cout << "Mission Complete" << std::endl;
+        safe_print("Mission Complete");
         co_await rover.hw.motors.disarm();
+        sched.stop();
     }
 }
 
@@ -151,11 +180,16 @@ int main() noexcept
     using namespace kmx::aether::v0_1;
     using namespace kmx::aether::v0_1::sample::rover;
 
+    std::signal(SIGINT, handle_signal);
+
     scheduler sched;
 
     constexpr bool use_remote = false;
     using rover_vehicle = configurator<use_remote>::vehicle;
     rover_vehicle rover;
+
+    rover.ai.path_finder.set_scheduler(sched);
+    rover.ai.obstacle_avoid.set_scheduler(sched);
 
     auto m = mission(rover, sched);
     sched.schedule(m.handle);
