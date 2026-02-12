@@ -98,8 +98,6 @@ namespace kmx::aether::v0_1
                 class watchdog { public: using service_tag = void; };
             }
 
-            // removed type aliases that conflicted with concept names
-
             namespace remote
             {
                 class scheduler { public: using service_tag = void; };
@@ -126,8 +124,6 @@ namespace kmx::aether::v0_1
                 class registry { public: using service_tag = void; };
                 class profile_loader { public: using service_tag = void; };
             }
-
-            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -162,8 +158,6 @@ namespace kmx::aether::v0_1
                 class gpu_context { public: using service_tag = void; };
             }
 
-            // removed type aliases that conflicted with concept names
-
             namespace remote
             {
                 class neural_runtime { public: using service_tag = void; };
@@ -184,8 +178,6 @@ namespace kmx::aether::v0_1
             {
                 class clock_sync { public: using service_tag = void; };
             }
-
-            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -218,8 +210,6 @@ namespace kmx::aether::v0_1
                 class qos_policy { public: using service_tag = void; };
             }
 
-            // removed type aliases that conflicted with concept names
-
             namespace remote
             {
                 class interface { public: using service_tag = void; };
@@ -248,8 +238,6 @@ namespace kmx::aether::v0_1
                 class key_store { public: using service_tag = void; };
             }
 
-            // removed type aliases that conflicted with concept names
-
             namespace remote
             {
                 class crypto_engine { public: using service_tag = void; };
@@ -273,8 +261,6 @@ namespace kmx::aether::v0_1
                 class blackbox { public: using service_tag = void; };
                 class journal { public: using service_tag = void; };
             }
-
-            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -308,8 +294,6 @@ namespace kmx::aether::v0_1
                 class altimeter { public: using service_tag = void; };
             }
 
-            // removed type aliases that conflicted with concept names
-
             namespace remote
             {
                 class imu_array { public: using service_tag = void; };
@@ -337,8 +321,6 @@ namespace kmx::aether::v0_1
                 class ocean_data { public: using service_tag = void; };
                 class proximity { public: using service_tag = void; };
             }
-
-            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -396,8 +378,6 @@ namespace kmx::aether::v0_1
                 class depth_estimator { public: using service_tag = void; };
             }
 
-            // removed type aliases that conflicted with concept names
-
             namespace remote
             {
                 class camera { public: using service_tag = void; };
@@ -429,8 +409,6 @@ namespace kmx::aether::v0_1
                 class vibration_sensor { public: using service_tag = void; };
                 class chip_monitor { public: using service_tag = void; };
             }
-
-            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -481,8 +459,6 @@ namespace kmx::aether::v0_1
                 class thrust_vector { public: using service_tag = void; };
                 class variable_pitch { public: using service_tag = void; };
             }
-
-            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -539,8 +515,6 @@ namespace kmx::aether::v0_1
                 };
             }
 
-            // removed type aliases that conflicted with concept names
-
             namespace remote
             {
                 class servo_array {
@@ -575,8 +549,6 @@ namespace kmx::aether::v0_1
                 class pdu_channel { public: using service_tag = void; };
             }
 
-            // removed type aliases that conflicted with concept names
-
             namespace remote
             {
                 class bms_manager { public: using service_tag = void; };
@@ -608,8 +580,6 @@ namespace kmx::aether::v0_1
                 class slam_engine { public: using service_tag = void; };
                 class origin_manager { public: using service_tag = void; };
             }
-
-            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -649,6 +619,7 @@ namespace kmx::aether::v0_1
                          co_return 10.0f;
                     }
                 };
+
                 class local_planner {
                     scheduler* _sched = nullptr;
                 public:
@@ -662,10 +633,9 @@ namespace kmx::aether::v0_1
                          co_return target_speed;
                     }
                 };
+
                 class swarm_logic { public: using service_tag = void; };
             }
-
-            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -695,8 +665,6 @@ namespace kmx::aether::v0_1
                 class position_ctrl { public: using service_tag = void; };
                 class allocator { public: using service_tag = void; };
             }
-
-            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -754,8 +722,6 @@ namespace kmx::aether::v0_1
                 class mode_manager { public: using service_tag = void; };
                 class preflight_check { public: using service_tag = void; };
             }
-
-            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
@@ -837,8 +803,6 @@ namespace kmx::aether::v0_1
                 class ew_suite { public: using service_tag = void; };
             }
 
-            // removed type aliases that conflicted with concept names
-
             namespace remote
             {
                 class master_arm { public: using service_tag = void; };
@@ -870,8 +834,6 @@ namespace kmx::aether::v0_1
                 class satcom_modem { public: using service_tag = void; };
                 class rcem_receiver { public: using service_tag = void; };
             }
-
-            // removed type aliases that conflicted with concept names
 
             namespace remote
             {
