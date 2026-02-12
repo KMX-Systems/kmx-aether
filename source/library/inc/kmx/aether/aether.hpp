@@ -284,6 +284,9 @@ namespace kmx::aether::v0_1
             /// @brief Multi-constellation GNSS interface (Contract).
             template<typename T> concept gnss_receiver = async_service<T>;
 
+            /// @brief 3-Axis Magnetometer (Contract).
+            template<typename T> concept magnetometer = async_service<T>;
+
             /// @brief Barometric or Laser altimetry (Contract).
             template<typename T> concept altimeter = async_service<T>;
 
@@ -291,6 +294,7 @@ namespace kmx::aether::v0_1
             {
                 class imu_array { public: using service_tag = void; };
                 class gnss_receiver { public: using service_tag = void; };
+                class magnetometer { public: using service_tag = void; };
                 class altimeter { public: using service_tag = void; };
             }
 
@@ -298,6 +302,7 @@ namespace kmx::aether::v0_1
             {
                 class imu_array { public: using service_tag = void; };
                 class gnss_receiver { public: using service_tag = void; };
+                class magnetometer { public: using service_tag = void; };
                 class altimeter { public: using service_tag = void; };
             }
         }

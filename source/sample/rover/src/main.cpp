@@ -6,6 +6,7 @@
 #include <random>
 #include <thread>
 #include <chrono>
+#include <optional>
 #include <kmx/aether/aether.hpp>
 #include <kmx/aether/scheduler.hpp>
 
@@ -50,6 +51,8 @@ namespace kmx::aether::v0_1::sample::rover
 
     template<
         sense::perception::lidar lidar_t,
+        sense::spatial::gnss_receiver gps_t,
+        sense::spatial::magnetometer mag_t,
         motion::propulsion::engine_control engine_t,
         motion::articulation::servo_array servo_t,
         payload::logistics::gripper_mech gripper_t,
@@ -58,14 +61,13 @@ namespace kmx::aether::v0_1::sample::rover
     struct hardware_t
     {
         lidar_t lidar;
+        gps_t gps;
+        mag_t compass;
         engine_t motors;
         servo_t steering; // Steerable wheels
         gripper_t claw;
 
-        lighting_t car_signal_lights;
-        lighting_t approach_distance_lights;
-        lighting_t stop_lights;
-        lighting_t rear_signal_lights;
+        lighting_t front_lights;
     };
 
     template<
@@ -202,6 +204,38 @@ namespace kmx::aether::v0_1::sample::rover
         }
     };
 
+    class rover_gnss_receiver
+    {
+        static constexpr float min_heading_deg = 0.0f;
+        static constexpr float max_heading_deg = 359.9f;
+        static constexpr float gps_fix_probability = 0.8f;
+    public:
+        using service_tag = void;
+
+        kmx::aether::v0_1::task<std::optional<float>> get_heading_deg()
+        {
+            if (random_float(0.0f, 1.0f) <= gps_fix_probability)
+            {
+                co_return random_float(min_heading_deg, max_heading_deg);
+            }
+
+            co_return std::nullopt;
+        }
+    };
+
+    class rover_magnetometer
+    {
+        static constexpr float min_heading_deg = 0.0f;
+        static constexpr float max_heading_deg = 359.9f;
+    public:
+        using service_tag = void;
+
+        kmx::aether::v0_1::task<float> get_heading_deg()
+        {
+            co_return random_float(min_heading_deg, max_heading_deg);
+        }
+    };
+
     template <bool use_remote>
     struct configurator
     {
@@ -210,6 +244,8 @@ namespace kmx::aether::v0_1::sample::rover
 
         using hardware_config = hardware_t<
             impl_t<rover_lidar, sense::perception::remote::lidar>,
+            impl_t<rover_gnss_receiver, sense::spatial::remote::gnss_receiver>,
+            impl_t<rover_magnetometer, sense::spatial::remote::magnetometer>,
             impl_t<motion::propulsion::local::engine_control, motion::propulsion::remote::engine_control>,
             impl_t<motion::articulation::local::servo_array, motion::articulation::remote::servo_array>,
             impl_t<payload::logistics::local::gripper_mech, payload::logistics::remote::gripper_mech>,
@@ -254,6 +290,17 @@ namespace kmx::aether::v0_1::sample::rover
             safe_print("[Mission] Iteration ", i, ": Sensing...");
             auto scan = co_await rover.hw.lidar.get_latest_scan();
             safe_print("  > LiDAR: Scan ID #", scan.id, " | Dist: ", scan.nearest_obstacle_dist, "m");
+
+            const auto gps_heading = co_await rover.hw.gps.get_heading_deg();
+            if (gps_heading.has_value())
+            {
+                safe_print("  > Nav: GPS heading ", *gps_heading, " deg");
+            }
+            else
+            {
+                const auto compass_heading = co_await rover.hw.compass.get_heading_deg();
+                safe_print("  > Nav: GPS unavailable, using compass heading ", compass_heading, " deg");
+            }
 
             // 1. Global
             safe_print("  > Global Planner: Generating route...");
