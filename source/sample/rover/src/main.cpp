@@ -3,6 +3,9 @@
 #include <mutex>
 #include <csignal>
 #include <atomic>
+#include <random>
+#include <thread>
+#include <chrono>
 #include <kmx/aether/aether.hpp>
 #include <kmx/aether/scheduler.hpp>
 
@@ -10,7 +13,7 @@ namespace kmx::aether::v0_1::sample::rover
 {
     std::atomic<bool> g_keep_running{true};
 
-    void handle_signal(int signal)
+    void handle_signal(int signal) noexcept
     {
         if (signal == SIGINT)
         {
@@ -18,12 +21,23 @@ namespace kmx::aether::v0_1::sample::rover
         }
     }
 
+    // Random generator helper
+    float random_float(float min, float max)
+    {
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_real_distribution<float> dis(min, max);
+        return dis(gen);
+    }
+
     std::mutex g_io_mutex;
 
     void safe_print(const auto&... args)
     {
         std::lock_guard lock(g_io_mutex);
-        ((std::cout << args), ...) << std::endl;
+        if constexpr (sizeof...(args) > 0) {
+            ((std::cout << args), ...) << std::endl;
+        }
     }
 
     namespace sense = kmx::aether::v0_1::sense;
@@ -104,6 +118,90 @@ namespace kmx::aether::v0_1::sample::rover
         comms_type radio;
     };
 
+    struct drive_cmd
+    {
+        float torque;
+        float steering_angle;
+    };
+
+    class rover_global_planner
+    {
+        static constexpr int planning_delay_ms = 200;
+        static constexpr float min_speed_mps = 8.0f;
+        static constexpr float max_speed_mps = 12.0f;
+
+        kmx::aether::v0_1::scheduler* _sched = nullptr;
+    public:
+        using service_tag = void;
+        void set_scheduler(kmx::aether::v0_1::scheduler& s) noexcept { _sched = &s; }
+
+        kmx::aether::v0_1::task<float> make_plan()
+        {
+             if (_sched) co_await kmx::aether::v0_1::sleep_stub(*_sched);
+
+             // Simulate heavy A* calculation
+             std::this_thread::sleep_for(std::chrono::milliseconds(planning_delay_ms));
+
+             co_return random_float(min_speed_mps, max_speed_mps);
+        }
+    };
+
+    class rover_local_planner
+    {
+        static constexpr float min_safe_distance_m = 2.0f;
+        static constexpr float avoidance_turn_angle_deg = 15.0f;
+        static constexpr int sensor_fusion_delay_ms = 50;
+        static constexpr float steering_noise_deg = 2.0f;
+        static constexpr float torque_noise_nm = 0.5f;
+
+        kmx::aether::v0_1::scheduler* _sched = nullptr;
+    public:
+        using service_tag = void;
+        void set_scheduler(kmx::aether::v0_1::scheduler& s) noexcept { _sched = &s; }
+
+        kmx::aether::v0_1::task<drive_cmd> compute_safe_cmd(float target_speed, const sense::perception::point_cloud scan)
+        {
+             if (_sched) co_await kmx::aether::v0_1::sleep_stub(*_sched);
+
+             // Simulate sensor fusion delay
+             std::this_thread::sleep_for(std::chrono::milliseconds(sensor_fusion_delay_ms));
+
+             if (scan.nearest_obstacle_dist < min_safe_distance_m)
+             {
+                 const float noisy_turn = avoidance_turn_angle_deg + random_float(-steering_noise_deg, steering_noise_deg);
+                 co_return drive_cmd{0.0f, noisy_turn}; // Stop and turn
+             }
+
+             const float noisy_torque = target_speed + random_float(-torque_noise_nm, torque_noise_nm);
+             // Add small steering corrections even when going straight
+             const float straight_steering = random_float(-steering_noise_deg, steering_noise_deg);
+             co_return drive_cmd{noisy_torque, straight_steering}; // Go straight
+        }
+    };
+
+    class rover_lidar
+    {
+        static constexpr float min_dist_m = 0.5f;
+        static constexpr float max_dist_m = 15.0f;
+    public:
+        using service_tag = void;
+
+        kmx::aether::v0_1::task<void> configure(sense::perception::lidar_config)
+        {
+            co_return;
+        }
+
+        kmx::aether::v0_1::task<sense::perception::point_cloud> get_latest_scan()
+        {
+            static int counter = 0;
+            sense::perception::point_cloud scan;
+            scan.id = counter++;
+            // Random distance between 0.5m and 15.0m
+            scan.nearest_obstacle_dist = random_float(min_dist_m, max_dist_m);
+            co_return scan;
+        }
+    };
+
     template <bool use_remote>
     struct configurator
     {
@@ -111,7 +209,7 @@ namespace kmx::aether::v0_1::sample::rover
         using impl_t = std::conditional_t<use_remote, remote_t, local_t>;
 
         using hardware_config = hardware_t<
-            impl_t<sense::perception::local::lidar, sense::perception::remote::lidar>,
+            impl_t<rover_lidar, sense::perception::remote::lidar>,
             impl_t<motion::propulsion::local::engine_control, motion::propulsion::remote::engine_control>,
             impl_t<motion::articulation::local::servo_array, motion::articulation::remote::servo_array>,
             impl_t<payload::logistics::local::gripper_mech, payload::logistics::remote::gripper_mech>,
@@ -121,8 +219,9 @@ namespace kmx::aether::v0_1::sample::rover
         using autonomy_config = autonomy_t<
             impl_t<gnc::navigation::local::ekf_fusion, gnc::navigation::remote::ekf_fusion>,
             impl_t<gnc::navigation::local::slam_engine, gnc::navigation::remote::slam_engine>,
-            impl_t<gnc::guidance::local::global_planner, gnc::guidance::remote::global_planner>,
-            impl_t<gnc::guidance::local::local_planner, gnc::guidance::remote::local_planner>,
+            impl_t<rover_global_planner, gnc::guidance::remote::global_planner>,
+            // Using custom planner instead of library one
+            impl_t<rover_local_planner, gnc::guidance::remote::local_planner>,
             impl_t<gnc::control::local::position_ctrl, gnc::control::remote::position_ctrl>
         >;
 
@@ -142,6 +241,9 @@ namespace kmx::aether::v0_1::sample::rover
     template<typename Vehicle>
     kmx::aether::v0_1::task<void> mission(Vehicle& rover, kmx::aether::v0_1::scheduler& sched)
     {
+        static constexpr int steering_channel = 0;
+        static constexpr int cycle_time_ms = 200;
+
         using namespace kmx::aether::v0_1;
 
         co_await rover.hw.motors.arm();
@@ -159,13 +261,16 @@ namespace kmx::aether::v0_1::sample::rover
 
             // 2. Local
             safe_print("  > Local Planner: Checking obstacles...");
-            const auto safe_torque = co_await rover.ai.obstacle_avoid.compute_safe_cmd(desired_speed, scan);
-            safe_print("  > Local Planner: Safe Command: ", safe_torque, " Nm");
+            const auto cmd = co_await rover.ai.obstacle_avoid.compute_safe_cmd(desired_speed, scan);
+            safe_print("  > Local Planner: Safe Command: ", cmd.torque, " Nm, Steering: ", cmd.steering_angle, " deg");
 
             // 3. Actuate
-            co_await rover.hw.motors.set_torque(safe_torque);
+            co_await rover.hw.motors.set_torque(cmd.torque);
+            co_await rover.hw.steering.set_angle(steering_channel, cmd.steering_angle);
 
             safe_print("[Mission] Resting...");
+            // Simulate cycle time
+            std::this_thread::sleep_for(std::chrono::milliseconds(cycle_time_ms));
             co_await sleep_stub(sched);
         }
 

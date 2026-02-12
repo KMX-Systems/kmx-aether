@@ -352,19 +352,19 @@ namespace kmx::aether::v0_1
         /// @brief High-bandwidth vision and ranging sensors.
         namespace perception
         {
-            struct PointCloud {
+            struct point_cloud {
                 int id = 0;
                 float nearest_obstacle_dist = 10.0f;
             };
-            struct LidarConfig { int rpm; };
+            struct lidar_config { int rpm; };
 
             /// @brief Interface for optical and thermal cameras (Contract).
             template<typename T> concept camera = async_service<T>;
 
             /// @brief Interface for 2D/3D Lidar scanners (Contract).
-            template<typename T> concept lidar = async_service<T> && requires(T t, LidarConfig c) {
+            template<typename T> concept lidar = async_service<T> && requires(T t, lidar_config c) {
                 { t.configure(c) } -> sender_of<void>;
-                { t.get_latest_scan() } -> sender_of<PointCloud>;
+                { t.get_latest_scan() } -> sender_of<point_cloud>;
             };
 
             /// @brief Interface for automotive/marine radar units (Contract).
@@ -382,10 +382,10 @@ namespace kmx::aether::v0_1
                 class lidar {
                 public:
                     using service_tag = void;
-                    task<void> configure(LidarConfig) { co_return; }
-                    task<PointCloud> get_latest_scan() {
+                    task<void> configure(lidar_config) { co_return; }
+                    task<point_cloud> get_latest_scan() {
                         static int counter = 0;
-                        PointCloud scan;
+                        point_cloud scan;
                         scan.id = counter++;
                         scan.nearest_obstacle_dist = std::max(0.0f, 10.0f - counter * 1.5f);
                         co_return scan;
@@ -405,8 +405,8 @@ namespace kmx::aether::v0_1
                 public:
                     using service_tag = void;
                     // Remote implementation would serialize args here
-                    auto configure(LidarConfig) { return task_stub<void>{}; }
-                    auto get_latest_scan() { return task_stub<PointCloud>{}; }
+                    auto configure(lidar_config) { return task_stub<void>{}; }
+                    auto get_latest_scan() { return task_stub<point_cloud>{}; }
                 };
                 class radar { public: using service_tag = void; };
                 class feature_extractor { public: using service_tag = void; };
@@ -655,7 +655,7 @@ namespace kmx::aether::v0_1
                     using service_tag = void;
                     void set_scheduler(scheduler& s) { _sched = &s; }
 
-                    task<float> compute_safe_cmd(float target_speed, sense::perception::PointCloud scan) {
+                    task<float> compute_safe_cmd(float target_speed, sense::perception::point_cloud scan) {
                          if (_sched) co_await sleep_stub(*_sched);
 
                          if (scan.nearest_obstacle_dist < 2.0f) co_return 0.0f;
