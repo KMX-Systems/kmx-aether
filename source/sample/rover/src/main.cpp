@@ -7,6 +7,10 @@
 #include <thread>
 #include <chrono>
 #include <optional>
+#include <cmath>
+#include <algorithm>
+#include <vector>
+#include <span>
 #include <kmx/aether/aether.hpp>
 #include <kmx/aether/scheduler.hpp>
 
@@ -106,6 +110,18 @@ namespace kmx::aether::v0_1::sample::rover
         mavlink_t gcs_link;
     };
 
+    struct drive_cmd
+    {
+        float torque;
+        float steering_angle;
+    };
+
+    struct waypoint
+    {
+        float x_m;
+        float y_m;
+    };
+
     template<
         typename hardware_type,
         typename autonomy_type,
@@ -118,13 +134,184 @@ namespace kmx::aether::v0_1::sample::rover
         autonomy_type ai;
         safety_type protection;
         comms_type radio;
+
+        task<drive_cmd> execute_navigation_cycle(
+            std::size_t mission_iteration,
+            const waypoint& current_position,
+            float distance_to_target_m);
+
+        void update_position_towards_target(
+            waypoint& current_position,
+            const waypoint& target,
+            float distance_to_target_m,
+            float commanded_speed_mps,
+            int cycle_time_ms);
+
+        task<bool> run_waypoint_until_reached(
+            const waypoint& target,
+            waypoint& current_position,
+            std::size_t& mission_iteration,
+            scheduler& sched);
+
+        task<void> mission(
+            std::span<const waypoint> route,
+            scheduler& sched);
     };
 
-    struct drive_cmd
+    template<typename hardware_type, typename autonomy_type, typename safety_type, typename comms_type>
+    task<drive_cmd> vehicle_t<hardware_type, autonomy_type, safety_type, comms_type>::execute_navigation_cycle(
+        std::size_t mission_iteration,
+        const waypoint& current_position,
+        float distance_to_target_m)
     {
-        float torque;
-        float steering_angle;
-    };
+        static constexpr int steering_channel = 0;
+
+        safe_print("[Mission] Iteration ", mission_iteration,
+                   " | Position (", current_position.x_m, ", ", current_position.y_m,
+                   ") m | Distance to waypoint: ", distance_to_target_m, " m");
+
+        safe_print("  > Sensing...");
+        auto scan = co_await this->hw.lidar.get_latest_scan();
+        safe_print("  > LiDAR: Scan ID #", scan.id, " | Dist: ", scan.nearest_obstacle_dist, "m");
+
+        const auto gps_heading = co_await this->hw.gps.get_heading_deg();
+        if (gps_heading.has_value())
+        {
+            safe_print("  > Nav: GPS heading ", *gps_heading, " deg");
+        }
+        else
+        {
+            const auto compass_heading = co_await this->hw.compass.get_heading_deg();
+            safe_print("  > Nav: GPS unavailable, using compass heading ", compass_heading, " deg");
+        }
+
+        safe_print("  > Global Planner: Generating route...");
+        const auto desired_speed = co_await this->ai.path_finder.make_plan();
+
+        safe_print("  > Local Planner: Checking obstacles...");
+        const auto cmd = co_await this->ai.obstacle_avoid.compute_safe_cmd(desired_speed, scan);
+        safe_print("  > Local Planner: Safe Command: ", cmd.torque, " Nm, Steering: ", cmd.steering_angle, " deg");
+
+        co_await this->hw.motors.set_torque(cmd.torque);
+        co_await this->hw.steering.set_angle(steering_channel, cmd.steering_angle);
+
+        co_return cmd;
+    }
+
+    template<typename hardware_type, typename autonomy_type, typename safety_type, typename comms_type>
+    void vehicle_t<hardware_type, autonomy_type, safety_type, comms_type>::update_position_towards_target(
+        waypoint& current_position,
+        const waypoint& target,
+        float distance_to_target_m,
+        float commanded_speed_mps,
+        int cycle_time_ms)
+    {
+        const float max_step_m = commanded_speed_mps * (static_cast<float>(cycle_time_ms) / 1000.0f);
+        if (max_step_m <= 0.0f)
+        {
+            return;
+        }
+
+        const float dx = target.x_m - current_position.x_m;
+        const float dy = target.y_m - current_position.y_m;
+        const float step_m = std::min(distance_to_target_m, max_step_m);
+        const float inv_dist = 1.0f / distance_to_target_m;
+        current_position.x_m += dx * inv_dist * step_m;
+        current_position.y_m += dy * inv_dist * step_m;
+    }
+
+    template<typename hardware_type, typename autonomy_type, typename safety_type, typename comms_type>
+    task<bool> vehicle_t<hardware_type, autonomy_type, safety_type, comms_type>::run_waypoint_until_reached(
+        const waypoint& target,
+        waypoint& current_position,
+        std::size_t& mission_iteration,
+        scheduler& sched)
+    {
+        static constexpr int cycle_time_ms = 200;
+        static constexpr float waypoint_reached_distance_m = 0.5f;
+        static constexpr int max_cycles_per_waypoint = 200;
+
+        int waypoint_cycles = 0;
+        while (g_keep_running)
+        {
+            const float dx = target.x_m - current_position.x_m;
+            const float dy = target.y_m - current_position.y_m;
+            const float distance_to_target_m = std::sqrt(dx * dx + dy * dy);
+
+            if (distance_to_target_m <= waypoint_reached_distance_m)
+            {
+                safe_print("[Mission] Waypoint reached at (", current_position.x_m, ", ", current_position.y_m, ") m");
+                co_return true;
+            }
+
+            if (waypoint_cycles >= max_cycles_per_waypoint)
+            {
+                safe_print("[Mission] Waypoint timeout, stopping mission for safety");
+                g_keep_running = false;
+                co_return false;
+            }
+
+            ++waypoint_cycles;
+            ++mission_iteration;
+
+            const auto cmd = co_await this->execute_navigation_cycle(mission_iteration, current_position, distance_to_target_m);
+
+            this->update_position_towards_target(
+                current_position,
+                target,
+                distance_to_target_m,
+                std::max(0.0f, cmd.torque),
+                cycle_time_ms);
+
+            safe_print("  > Updated Position (", current_position.x_m, ", ", current_position.y_m, ") m");
+            safe_print("[Mission] Resting...");
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(cycle_time_ms));
+            co_await sleep_stub(sched);
+        }
+
+        co_return false;
+    }
+
+    template<typename hardware_type, typename autonomy_type, typename safety_type, typename comms_type>
+    task<void> vehicle_t<hardware_type, autonomy_type, safety_type, comms_type>::mission(
+        std::span<const waypoint> route,
+        scheduler& sched)
+    {
+        co_await this->hw.motors.arm();
+        safe_print("System Armed");
+
+        if (route.empty())
+        {
+            safe_print("[Mission] No waypoints provided");
+            safe_print("Mission Complete");
+            co_await this->hw.motors.disarm();
+            sched.stop();
+            co_return;
+        }
+
+        waypoint current_position{0.0f, 0.0f};
+        std::size_t mission_iteration = 0;
+
+        safe_print("[Mission] Current position (", current_position.x_m, ", ", current_position.y_m, ") m");
+
+        for (std::size_t waypoint_index = 0; g_keep_running && waypoint_index < route.size(); ++waypoint_index)
+        {
+            const auto& target = route[waypoint_index];
+            safe_print("[Mission] Waypoint ", waypoint_index + 1, "/", route.size(),
+                       " -> Target (", target.x_m, ", ", target.y_m, ") m");
+
+            const bool reached = co_await this->run_waypoint_until_reached(target, current_position, mission_iteration, sched);
+            if (!reached)
+            {
+                break;
+            }
+        }
+
+        safe_print("Mission Complete");
+        co_await this->hw.motors.disarm();
+        sched.stop();
+    }
 
     class rover_global_planner
     {
@@ -132,14 +319,14 @@ namespace kmx::aether::v0_1::sample::rover
         static constexpr float min_speed_mps = 8.0f;
         static constexpr float max_speed_mps = 12.0f;
 
-        kmx::aether::v0_1::scheduler* _sched = nullptr;
+        scheduler* _sched = nullptr;
     public:
         using service_tag = void;
-        void set_scheduler(kmx::aether::v0_1::scheduler& s) noexcept { _sched = &s; }
+        void set_scheduler(scheduler& s) noexcept { _sched = &s; }
 
-        kmx::aether::v0_1::task<float> make_plan()
+        task<float> make_plan()
         {
-             if (_sched) co_await kmx::aether::v0_1::sleep_stub(*_sched);
+             if (_sched) co_await sleep_stub(*_sched);
 
              // Simulate heavy A* calculation
              std::this_thread::sleep_for(std::chrono::milliseconds(planning_delay_ms));
@@ -156,14 +343,14 @@ namespace kmx::aether::v0_1::sample::rover
         static constexpr float steering_noise_deg = 2.0f;
         static constexpr float torque_noise_nm = 0.5f;
 
-        kmx::aether::v0_1::scheduler* _sched = nullptr;
+           scheduler* _sched = nullptr;
     public:
         using service_tag = void;
-        void set_scheduler(kmx::aether::v0_1::scheduler& s) noexcept { _sched = &s; }
+           void set_scheduler(scheduler& s) noexcept { _sched = &s; }
 
-        kmx::aether::v0_1::task<drive_cmd> compute_safe_cmd(float target_speed, const sense::perception::point_cloud scan)
+           task<drive_cmd> compute_safe_cmd(float target_speed, const sense::perception::point_cloud scan)
         {
-             if (_sched) co_await kmx::aether::v0_1::sleep_stub(*_sched);
+               if (_sched) co_await sleep_stub(*_sched);
 
              // Simulate sensor fusion delay
              std::this_thread::sleep_for(std::chrono::milliseconds(sensor_fusion_delay_ms));
@@ -188,12 +375,12 @@ namespace kmx::aether::v0_1::sample::rover
     public:
         using service_tag = void;
 
-        kmx::aether::v0_1::task<void> configure(sense::perception::lidar_config)
+        task<void> configure(sense::perception::lidar_config)
         {
             co_return;
         }
 
-        kmx::aether::v0_1::task<sense::perception::point_cloud> get_latest_scan()
+        task<sense::perception::point_cloud> get_latest_scan()
         {
             static int counter = 0;
             sense::perception::point_cloud scan;
@@ -212,7 +399,7 @@ namespace kmx::aether::v0_1::sample::rover
     public:
         using service_tag = void;
 
-        kmx::aether::v0_1::task<std::optional<float>> get_heading_deg()
+        task<std::optional<float>> get_heading_deg()
         {
             if (random_float(0.0f, 1.0f) <= gps_fix_probability)
             {
@@ -230,7 +417,7 @@ namespace kmx::aether::v0_1::sample::rover
     public:
         using service_tag = void;
 
-        kmx::aether::v0_1::task<float> get_heading_deg()
+        task<float> get_heading_deg()
         {
             co_return random_float(min_heading_deg, max_heading_deg);
         }
@@ -274,57 +461,6 @@ namespace kmx::aether::v0_1::sample::rover
         using vehicle = vehicle_t<hardware_config, autonomy_config, safety_config, comms_config>;
     };
 
-    template<typename Vehicle>
-    kmx::aether::v0_1::task<void> mission(Vehicle& rover, kmx::aether::v0_1::scheduler& sched)
-    {
-        static constexpr int steering_channel = 0;
-        static constexpr int cycle_time_ms = 200;
-
-        using namespace kmx::aether::v0_1;
-
-        co_await rover.hw.motors.arm();
-        safe_print("System Armed");
-
-        for (int i = 0; g_keep_running; ++i)
-        {
-            safe_print("[Mission] Iteration ", i, ": Sensing...");
-            auto scan = co_await rover.hw.lidar.get_latest_scan();
-            safe_print("  > LiDAR: Scan ID #", scan.id, " | Dist: ", scan.nearest_obstacle_dist, "m");
-
-            const auto gps_heading = co_await rover.hw.gps.get_heading_deg();
-            if (gps_heading.has_value())
-            {
-                safe_print("  > Nav: GPS heading ", *gps_heading, " deg");
-            }
-            else
-            {
-                const auto compass_heading = co_await rover.hw.compass.get_heading_deg();
-                safe_print("  > Nav: GPS unavailable, using compass heading ", compass_heading, " deg");
-            }
-
-            // 1. Global
-            safe_print("  > Global Planner: Generating route...");
-            const auto desired_speed = co_await rover.ai.path_finder.make_plan();
-
-            // 2. Local
-            safe_print("  > Local Planner: Checking obstacles...");
-            const auto cmd = co_await rover.ai.obstacle_avoid.compute_safe_cmd(desired_speed, scan);
-            safe_print("  > Local Planner: Safe Command: ", cmd.torque, " Nm, Steering: ", cmd.steering_angle, " deg");
-
-            // 3. Actuate
-            co_await rover.hw.motors.set_torque(cmd.torque);
-            co_await rover.hw.steering.set_angle(steering_channel, cmd.steering_angle);
-
-            safe_print("[Mission] Resting...");
-            // Simulate cycle time
-            std::this_thread::sleep_for(std::chrono::milliseconds(cycle_time_ms));
-            co_await sleep_stub(sched);
-        }
-
-        safe_print("Mission Complete");
-        co_await rover.hw.motors.disarm();
-        sched.stop();
-    }
 }
 
 int main() noexcept
@@ -340,10 +476,16 @@ int main() noexcept
     using rover_vehicle = configurator<use_remote>::vehicle;
     rover_vehicle rover;
 
+    const std::vector<waypoint> route{
+        waypoint{5.0f, 0.0f},
+        waypoint{10.0f, 8.0f},
+        waypoint{20.0f, 15.0f}
+    };
+
     rover.ai.path_finder.set_scheduler(sched);
     rover.ai.obstacle_avoid.set_scheduler(sched);
 
-    auto m = mission(rover, sched);
+    auto m = rover.mission(std::span<const waypoint>{route}, sched);
     sched.schedule(m.handle);
     sched.run();
 
